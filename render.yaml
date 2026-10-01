@@ -1,0 +1,235 @@
+# Render Blueprints Configuration for yt-dlp-bot
+# Deploy with: `render blueprint create`
+# Or use this as a reference for manual deployment in Render Dashboard
+
+services:
+  # API Service - Web endpoint
+  - type: web
+    name: yt-dlp-bot-api
+    env: docker
+    dockerfilePath: ./app_api/Dockerfile
+    buildCommand: docker build -t yt-api .
+    startCommand: bash -c "python start.py && python main.py"
+    envVars:
+      # Common
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONASYNCIODEBUG
+        value: "0"
+      - key: POSTGRES_USER
+        value: "yt"
+      - key: POSTGRES_PASSWORD
+        fromService: yt-dlp-bot-postgres
+        property: password
+      - key: POSTGRES_HOST
+        fromService: yt-dlp-bot-postgres
+        property: hostname
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: "yt"
+      - key: SQLALCHEMY_ECHO
+        value: "False"
+      - key: SQLALCHEMY_EXPIRE_ON_COMMIT
+        value: "False"
+      - key: RABBITMQ_USER
+        value: "guest"
+      - key: RABBITMQ_PASSWORD
+        value: "guest"
+      - key: RABBITMQ_HOST
+        fromService: yt-dlp-bot-rabbitmq
+        property: hostname
+      - key: RABBITMQ_PORT
+        value: "5672"
+      - key: REDIS_HOST
+        fromService: yt-dlp-bot-redis
+        property: hostname
+      - key: TMP_DOWNLOAD_ROOT_PATH
+        value: "/tmp/download_tmpfs"
+      - key: TMP_DOWNLOAD_DIR
+        value: "downloading"
+      - key: TMP_DOWNLOADED_DIR
+        value: "downloaded"
+      - key: LOG_LEVEL
+        value: "INFO"
+      # API Specific
+      - key: APPLICATION_NAME
+        value: "yt_api"
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: API_PORT
+        value: "8000"
+      - key: API_WORKERS
+        value: "4"
+    ports:
+      - port: 8000
+        name: api
+    autoDeploy: true
+    plan: free
+
+  # Bot Service - Telegram bot
+  - type: worker
+    name: yt-dlp-bot-telegram
+    env: docker
+    dockerfilePath: ./app_bot/Dockerfile
+    buildCommand: docker build -t yt-bot .
+    startCommand: bash -c "python start.py && python main.py"
+    envVars:
+      # Common
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONASYNCIODEBUG
+        value: "0"
+      - key: POSTGRES_USER
+        value: "yt"
+      - key: POSTGRES_PASSWORD
+        fromService: yt-dlp-bot-postgres
+        property: password
+      - key: POSTGRES_HOST
+        fromService: yt-dlp-bot-postgres
+        property: hostname
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: "yt"
+      - key: RABBITMQ_USER
+        value: "guest"
+      - key: RABBITMQ_PASSWORD
+        value: "guest"
+      - key: RABBITMQ_HOST
+        fromService: yt-dlp-bot-rabbitmq
+        property: hostname
+      - key: RABBITMQ_PORT
+        value: "5672"
+      - key: REDIS_HOST
+        fromService: yt-dlp-bot-redis
+        property: hostname
+      - key: TMP_DOWNLOAD_ROOT_PATH
+        value: "/tmp/download_tmpfs"
+      - key: LOG_LEVEL
+        value: "INFO"
+      # Bot Specific
+      - key: APPLICATION_NAME
+        value: "yt_bot"
+      - key: TG_MAX_MSG_SIZE
+        value: "4096"
+      - key: TG_MAX_CAPTION_SIZE
+        value: "1024"
+    autoDeploy: true
+    plan: free
+
+  # Worker Service - Download processor
+  - type: worker
+    name: yt-dlp-bot-worker
+    env: docker
+    dockerfilePath: ./app_worker/Dockerfile
+    buildCommand: docker build -t yt-worker .
+    startCommand: bash -c "python start.py && alembic upgrade head && python main.py"
+    envVars:
+      # Common
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: POSTGRES_USER
+        value: "yt"
+      - key: POSTGRES_PASSWORD
+        fromService: yt-dlp-bot-postgres
+        property: password
+      - key: POSTGRES_HOST
+        fromService: yt-dlp-bot-postgres
+        property: hostname
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: "yt"
+      - key: RABBITMQ_USER
+        value: "guest"
+      - key: RABBITMQ_PASSWORD
+        value: "guest"
+      - key: RABBITMQ_HOST
+        fromService: yt-dlp-bot-rabbitmq
+        property: hostname
+      - key: RABBITMQ_PORT
+        value: "5672"
+      - key: REDIS_HOST
+        fromService: yt-dlp-bot-redis
+        property: hostname
+      - key: LOG_LEVEL
+        value: "INFO"
+      # Worker Specific
+      - key: APPLICATION_NAME
+        value: "yt_worker"
+      - key: MAX_SIMULTANEOUS_DOWNLOADS
+        value: "2"
+      - key: MAX_DOWNLOAD_THREADS
+        value: "10"
+      - key: STORAGE_PATH
+        value: "/filestorage"
+      - key: THUMBNAIL_FRAME_SECOND
+        value: "10.0"
+      - key: INSTAGRAM_ENCODE_TO_H264
+        value: "True"
+      - key: FACEBOOK_ENCODE_TO_H264
+        value: "True"
+    volumes:
+      - name: downloads
+        mountPath: /filestorage
+    autoDeploy: true
+    plan: free
+
+  # PostgreSQL Database
+  - type: postgres
+    name: yt-dlp-bot-postgres
+    env: docker
+    dockerCommand: postgres -c max_connections=100
+    envVars:
+      - key: POSTGRES_USER
+        value: "yt"
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: "yt"
+    volumes:
+      - name: pgdata
+        mountPath: /var/lib/postgresql/data
+    autoDeploy: true
+    plan: free
+
+  # Redis Cache
+  - type: redis
+    name: yt-dlp-bot-redis
+    env: docker
+    dockerCommand: redis-server
+    autoDeploy: true
+    plan: free
+
+  # RabbitMQ (using docker service as Render doesn't have managed RabbitMQ)
+  - type: worker
+    name: yt-dlp-bot-rabbitmq
+    env: docker
+    dockerfilePath: ./base.Dockerfile
+    buildCommand: docker build -t rabbitmq-base .
+    startCommand: docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.12-management-alpine
+    envVars:
+      - key: RABBITMQ_DEFAULT_USER
+        value: "guest"
+      - key: RABBITMQ_DEFAULT_PASS
+        value: "guest"
+    ports:
+      - port: 5672
+        name: amqp
+      - port: 15672
+        name: management
+    autoDeploy: true
+    plan: free
+
+volumes:
+  - name: pgdata
+    region: us-east-1
+  - name: downloads
+    region: us-east-1
