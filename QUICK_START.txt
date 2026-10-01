@@ -1,0 +1,186 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                   yt-dlp-bot RENDER DEPLOYMENT GUIDE                          ║
+║                         (Fast Setup - 5 Minutes)                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: GET YOUR CREDENTIALS                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  ✓ Telegram API ID & Hash:  https://my.telegram.org/apps
+  ✓ Bot Token:              @BotFather (send /newbot)
+  ✓ Your User ID:           @userinfobot
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 2: CONFIGURE THE BOT                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Edit: app_bot/config.yml
+
+  telegram:
+    api_id: YOUR_API_ID
+    api_hash: "YOUR_API_HASH"
+    token: "YOUR_BOT_TOKEN"
+    allowed_users:
+      - id: YOUR_USER_ID
+        is_admin: true
+        download_media_type: "VIDEO"
+        save_to_storage: true
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 3: DEPLOY ON RENDER                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  1. Go to https://render.com
+  2. Click "New +" → "Web Service"
+  3. Connect your GitHub repository
+  4. Select branch: arena/01a0f8ed-yt-dlp-bot
+  5. Use docker-compose.render.yml
+
+  Create these 6 services:
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ SERVICE          │ TYPE          │ DOCKER IMAGE          │ NOTES                │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ yt-dlp-postgres  │ PostgreSQL    │ postgres:15           │ Free plan OK         │
+  │ yt-dlp-redis     │ Redis         │ redis:alpine          │ Free plan OK         │
+  │ yt-dlp-rabbitmq  │ Docker        │ rabbitmq:3.12-alpine  │ Ports: 5672,15672    │
+  │ yt-dlp-api       │ Web Service   │ app_api/Dockerfile    │ Port: 8000→1984     │
+  │ yt-dlp-bot       │ Worker        │ app_bot/Dockerfile    │ Needs config.yml     │
+  │ yt-dlp-worker    │ Worker        │ app_worker/Dockerfile │ Needs disk: /filestorage │
+  └────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 4: ENVIRONMENT VARIABLES                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  ALL SERVICES need:
+    POSTGRES_USER=yt
+    POSTGRES_PASSWORD=your_postgres_password
+    POSTGRES_HOST=your_postgres_hostname
+    POSTGRES_PORT=5432
+    POSTGRES_DB=yt
+    RABBITMQ_USER=guest
+    RABBITMQ_PASSWORD=guest
+    RABBITMQ_HOST=your_rabbitmq_hostname
+    RABBITMQ_PORT=5672
+    REDIS_HOST=your_redis_hostname
+    LOG_LEVEL=INFO
+
+  API SERVICE also needs:
+    APPLICATION_NAME=yt_api
+    API_HOST=0.0.0.0
+    API_PORT=8000
+    API_WORKERS=4
+
+  BOT SERVICE also needs:
+    APPLICATION_NAME=yt_bot
+    TG_MAX_MSG_SIZE=4096
+    TG_MAX_CAPTION_SIZE=1024
+
+  WORKER SERVICE also needs:
+    APPLICATION_NAME=yt_worker
+    MAX_SIMULTANEOUS_DOWNLOADS=2
+    MAX_DOWNLOAD_THREADS=10
+    STORAGE_PATH=/filestorage
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 5: LOCAL TESTING (Optional)                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Run: ./start_all.sh
+
+  This will:
+    ✓ Build all Docker images
+    ✓ Start PostgreSQL, Redis, RabbitMQ
+    ✓ Start API (port 1984)
+    ✓ Start Bot service
+    ✓ Start Worker service
+
+  Test:
+    curl http://localhost:1984/status
+    Send YouTube URL to your bot in Telegram
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ DEPLOYMENT CHECKLIST                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  [ ] Telegram API credentials obtained
+  [ ] Bot token obtained from @BotFather
+  [ ] User ID obtained from @userinfobot
+  [ ] app_bot/config.yml configured
+  [ ] PostgreSQL service created on Render
+  [ ] Redis service created on Render
+  [ ] RabbitMQ service created on Render
+  [ ] API service deployed
+  [ ] Bot service deployed
+  [ ] Worker service deployed with disk
+  [ ] All environment variables set
+  [ ] Service dependencies configured
+  [ ] Bot tested with YouTube URL
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Problem: Bot doesn't respond
+    → Check bot service logs
+    → Verify token in config.yml
+    → Make sure bot is in your chat
+
+  Problem: "Waiting for PostgreSQL"
+    → Check PostgreSQL service is running
+    → Verify POSTGRES_HOST is correct
+    → Check service dependencies
+
+  Problem: Downloads not saving
+    → Check Worker service has disk mounted
+    → Verify STORAGE_PATH=/filestorage
+    → Check disk permissions
+
+  Problem: API 500 errors
+    → Check API service logs
+    → Verify all common env vars set
+    → Check database connection
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ USEFUL COMMANDS                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  # Local testing
+  ./start_all.sh                    # Start all services
+  docker compose -f docker-compose.render.yml down  # Stop all
+  docker compose -f docker-compose.render.yml logs -f  # View logs
+
+  # API endpoints
+  curl http://localhost:1984/status          # Health check
+  curl http://localhost:1984/v1/yt-dlp       # Version info
+  curl http://localhost:1984/v1/tasks        # List tasks
+  curl -X POST http://localhost:1984/v1/tasks -H "Content-Type: application/json" -d '{"url":"https://youtube.com/..."}'
+
+  # RabbitMQ management
+  http://localhost:15672  (user: guest, pass: guest)
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FILES CREATED FOR FAST DEPLOYMENT                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  ✓ render.yaml              - Render Blueprint configuration
+  ✓ .env.render              - All environment variables template
+  ✓ app_bot/config.yml       - Telegram bot configuration (EDIT THIS!)
+  ✓ docker-compose.render.yml - Local testing with Render config
+  ✓ start_all.sh             - Quick start script
+  ✓ DEPLOY_RENDER.md         - Detailed deployment guide
+  ✓ QUICK_START.txt          - This file
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ NEED HELP?                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Render Docs:      https://render.com/docs
+  Original Repo:    https://github.com/terletsky/yt-dlp-bot
+  Telegram Support: Check the original repo discussions
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         READY TO DEPLOY! 🚀                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
